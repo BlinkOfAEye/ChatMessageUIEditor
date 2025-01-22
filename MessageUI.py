@@ -316,46 +316,28 @@ def render_add_message_form() -> None:
             st.session_state.pop('adding_after_id', None)
             st.rerun()
 
-def export_selected_chats(chat_ids: Set[str]) -> Dict:
-    """Export chats with optimized queries."""
+def export_selected_chats(chat_ids: Set[str]) -> Dict[str, List[Dict[str, Any]]]:
+    """Export selected chat sessions as a dictionary."""
     conn = init_connection()
-    result = {"chats": []}
+    result = {}
     
-    try:
-        with conn:
-            data = conn.execute(f"""
-                SELECT 
-                    cs.chat_id,
-                    cs.model,
-                    cm.id,
-                    cm.role,
-                    cm.content,
-                    cm.created_at
-                FROM chat_sessions cs
-                JOIN chat_messages cm ON cs.chat_id = cm.chat_id
-                WHERE cs.chat_id IN ({','.join('?' * len(chat_ids))})
-                ORDER BY cs.chat_id, cm.order_id ASC
-            """, tuple(chat_ids)).fetchall()
-            
-            current_chat = None
-            for row in data:
-                if row['chat_id'] != current_chat:
-                    current_chat = row['chat_id']
-                    result["chats"].append({
-                        "chat_id": current_chat,
-                        "model": row['model'],
-                        "messages": []
-                    })
-                result["chats"][-1]["messages"].append({
-                    "id": row['id'],
-                    "role": row['role'],
-                    "content": row['content'],
-                    "created_at": row['created_at']
-                })
-        return result
-    except sqlite3.Error as e:
-        st.error(f"Error exporting chats: {str(e)}")
-        return result
+    for chat_id in chat_ids:
+        messages = conn.execute(
+            "SELECT id, chat_id, role, content, order_id FROM chat_messages WHERE chat_id = ? ORDER BY order_id ASC",
+            (chat_id,)
+        ).fetchall()
+        
+        result[chat_id] = [
+            {
+                'id': msg['id'],
+                'role': msg['role'],
+                'content': msg['content'],
+                'order_id': msg['order_id']
+            }
+            for msg in messages
+        ]
+    
+    return result
 
 def render_sidebar(chat_sessions: List[Dict[str, Any]]) -> None:
     """Render sidebar with chat sessions and export functionality."""
