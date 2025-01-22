@@ -65,56 +65,66 @@ for key, default in DEFAULT_STATE.items():
 
 @st.cache_resource
 def init_connection() -> sqlite3.Connection:
-    """Initialize database connection with optimized settings."""
-    try:
-        conn = sqlite3.connect('chatbots.db', check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        
-        # Set pragmas for optimization
-        pragmas = [
-            "PRAGMA journal_mode=WAL",
-            "PRAGMA synchronous=NORMAL",
-            "PRAGMA temp_store=MEMORY",
-            "PRAGMA cache_size=10000"
-        ]
-        
-        with conn:
-            for pragma in pragmas:
-                conn.execute(pragma)
+    """Initialize SQLite connection with optimizations."""
+    conn = sqlite3.connect('chatbot.db', check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    
+    with conn:
+        # Enable WAL mode and other optimizations
+        conn.executescript("""
+            PRAGMA journal_mode=WAL;
+            PRAGMA synchronous=NORMAL;
+            PRAGMA temp_store=MEMORY;
+            PRAGMA cache_size=10000;
             
-            # Create tables and indexes
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS chat_sessions (
-                    chat_id TEXT PRIMARY KEY,
-                    model TEXT,
-                    created_at TEXT,
-                    message_count INTEGER DEFAULT 0
-                )
-            ''')
+            CREATE TABLE IF NOT EXISTS chat_sessions (
+                chat_id TEXT PRIMARY KEY,
+                created_at TEXT NOT NULL
+            );
             
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS chat_messages (
-                    id INTEGER,
-                    chat_id TEXT,
-                    role TEXT,
-                    content TEXT,
-                    token_count INTEGER,
-                    created_at TEXT,
-                    order_id REAL,
-                    PRIMARY KEY (id, chat_id),
-                    FOREIGN KEY (chat_id) REFERENCES chat_sessions(chat_id)
-                )
-            ''')
-            
-            # Create indexes for performance
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_chat_id ON chat_messages(chat_id)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_order_id ON chat_messages(chat_id, order_id)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_created_at ON chat_sessions(created_at DESC)")
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                token_count INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (chat_id) REFERENCES chat_sessions(chat_id)
+            );
+        """)
         
-        return conn
-    except sqlite3.Error as e:
-        st.error(f"Database initialization error: {str(e)}")
-        raise
+        # Add columns if they don't exist
+        try:
+            conn.execute("ALTER TABLE chat_messages ADD COLUMN order_id REAL")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+            
+        try:
+            conn.execute("ALTER TABLE chat_sessions ADD COLUMN message_count INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+            
+        # Initialize order_id for any NULL values
+        conn.execute("UPDATE chat_messages SET order_id = id WHERE order_id IS NULL")
+        
+        # Initialize message_count for any NULL values
+        conn.execute("""
+            UPDATE chat_sessions 
+            SET message_count = (
+                SELECT COUNT(*) 
+                FROM chat_messages 
+                WHERE chat_messages.chat_id = chat_sessions.chat_id
+            )
+            WHERE message_count IS NULL
+        """)
+        
+        # Create indexes
+        conn.executescript("""
+            CREATE INDEX IF NOT EXISTS idx_messages_chat_id ON chat_messages(chat_id);
+            CREATE INDEX IF NOT EXISTS idx_messages_order ON chat_messages(chat_id, order_id);
+        """)
+    
+    return conn
 
 @st.cache_data(ttl=300)
 def fetch_chat_sessions_metadata() -> List[Dict[str, Any]]:
