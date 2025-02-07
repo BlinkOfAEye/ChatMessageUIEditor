@@ -2,24 +2,48 @@ import streamlit as st
 import sqlite3
 import json
 import re
-from typing import Dict, Set, Optional, List, Any
+from typing import Dict, Set, Optional, List, Any, Sequence
 from datetime import datetime
 
 # Constants
 CSS = """
 <style>
 .message-container {
-    padding: 10px;
-    margin: 5px 0;
-    width: 85%;
+    padding: 5px;
+    margin: 2px 0;
+    width: 100%;
 }
 .message-content {
-    display: inline-block;
-    vertical-align: top;
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    overflow-wrap: break-word;
+}
+.stExpander {
+    width: 100%;
+    max-width: 100%;
+}
+.row-widget.stExpander > div:first-child {
+    max-width: 100% !important;
+}
+.streamlit-expanderContent {
+    width: 100%;
+    max-width: 100%;
+    padding: 0 !important;
+}
+.stColumns {
+    width: 100%;
+    max-width: 100%;
+    gap: 0.5rem !important;
+}
+/* Add styles for text area */
+.stTextArea textarea {
+    width: 100% !important;
+    max-width: 100% !important;
 }
 .role-header {
     font-weight: bold;
-    margin-bottom: 5px;
+    margin-bottom: 3px;
 }
 .role-user { color: #2196F3; }
 .role-assistant { color: #4CAF50; }
@@ -127,14 +151,29 @@ def init_connection() -> sqlite3.Connection:
     return conn
 
 @st.cache_data(ttl=300)
-def fetch_chat_sessions_metadata() -> List[Dict[str, Any]]:
-    """Fetch chat session metadata efficiently."""
+def fetch_chat_sessions_metadata(chat_ids: Optional[Sequence[str]] = None) -> List[Dict[str, Any]]:
+    """Fetch chat session metadata efficiently.
+    Args:
+        chat_ids: Optional list of chat IDs to filter by. If None, returns all chats.
+    """
     conn = init_connection()
-    cursor = conn.execute("""
-        SELECT chat_id, model, created_at, message_count
-        FROM chat_sessions
-        ORDER BY created_at DESC
-    """)
+    if chat_ids:
+        # Use parameterized query with the list of chat_ids
+        placeholders = ','.join('?' * len(chat_ids))
+        query = f"""
+            SELECT chat_id, model, created_at, message_count
+            FROM chat_sessions
+            WHERE chat_id IN ({placeholders})
+            ORDER BY created_at DESC
+        """
+        cursor = conn.execute(query, chat_ids)
+    else:
+        # Original query for all chats
+        cursor = conn.execute("""
+            SELECT chat_id, model, created_at, message_count
+            FROM chat_sessions
+            ORDER BY created_at DESC
+        """)
     return [dict(row) for row in cursor.fetchall()]
 
 @st.cache_data(ttl=60)
@@ -239,8 +278,12 @@ def color_brackets(text: str) -> str:
 
 def render_message(msg: Dict[str, Any]) -> None:
     """Render a single message with controls."""
-    with st.expander(f"{ROLE_EMOJIS.get(msg['role'], '❓')} {msg['created_at']}", expanded=(msg['role'] != 'system')):
-        col1, col2, col3 = st.columns([6, 1, 1])
+    with st.expander(
+        f"{ROLE_EMOJIS.get(msg['role'], '❓')} {msg['created_at']}", 
+        expanded=(msg['role'] != 'system')
+    ):
+        # Use even larger ratio for content column
+        col1, col2, col3 = st.columns([30, 1, 1])
         
         with col1:
             is_editing = (st.session_state.editing_message_id == msg['id'])
@@ -256,7 +299,8 @@ def render_message(msg: Dict[str, Any]) -> None:
                     "Content",
                     value=msg['content'],
                     key=f"textarea_edit_msg_{msg['id']}",
-                    label_visibility="collapsed"
+                    label_visibility="collapsed",
+                    height=150  # Removed use_container_width
                 )
             else:
                 colored_content = color_brackets(msg['content']) if '<' in msg['content'] else msg['content']
@@ -264,13 +308,15 @@ def render_message(msg: Dict[str, Any]) -> None:
             
             st.markdown('</div></div>', unsafe_allow_html=True)
         
+        # Make buttons more compact
         with col2:
             if not is_editing:
-                if st.button("Edit", key=f"btn_edit_msg_{msg['id']}"):
+                # Add on_click handler to set editing state
+                if st.button("✏️", key=f"btn_edit_msg_{msg['id']}", help="Edit message", use_container_width=True):
                     st.session_state.editing_message_id = msg['id']
                     st.rerun()
             else:
-                if st.button("Save", key=f"btn_save_msg_{msg['id']}"):
+                if st.button("💾", key=f"btn_save_msg_{msg['id']}", help="Save changes", use_container_width=True):
                     if new_content.strip():
                         update_message(msg['id'], msg['chat_id'], new_content)
                         st.session_state.editing_message_id = None
@@ -278,7 +324,7 @@ def render_message(msg: Dict[str, Any]) -> None:
                         st.rerun()
         
         with col3:
-            if st.button("🗑️", key=f"btn_delete_msg_{msg['id']}", help="Delete message"):
+            if st.button("🗑️", key=f"btn_delete_msg_{msg['id']}", help="Delete message", use_container_width=True):
                 delete_message(msg['id'], msg['chat_id'])
                 fetch_chat_messages.clear()
                 fetch_chat_sessions_metadata.clear()
@@ -415,15 +461,21 @@ def render_sidebar(chat_sessions: List[Dict[str, Any]]) -> None:
                         mime="application/json"
                     )
 
-def main():
-    """Main application entry point."""
+def main(chat_ids: Optional[Sequence[str]] = None):
+    """Main application entry point.
+    Args:
+        chat_ids: Optional list of chat IDs to display. If None, shows all chats.
+    """
     st.title("Chat Messages")
     st.markdown(CSS, unsafe_allow_html=True)
     
-    chat_sessions = fetch_chat_sessions_metadata()
+    chat_sessions = fetch_chat_sessions_metadata(chat_ids)
     
     if chat_sessions:
         if st.session_state.selected_chat_id is None:
+            st.session_state.selected_chat_id = chat_sessions[0]['chat_id']
+        elif chat_ids and st.session_state.selected_chat_id not in chat_ids:
+            # Reset selection if current selection isn't in filtered list
             st.session_state.selected_chat_id = chat_sessions[0]['chat_id']
         
         render_sidebar(chat_sessions)
@@ -467,4 +519,10 @@ def main():
         st.warning("No chat sessions found in the database.")
 
 if __name__ == "__main__":
-    main() 
+    # Example: To show all chats
+    # main()
+    
+    # Example: To show specific chats only
+    main(chat_ids=[
+        '7ebaf332-a1b7-4ed6-8233-309d2a138c84'
+    ]) 
