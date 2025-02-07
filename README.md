@@ -50,13 +50,71 @@ http://localhost:8501
 
 ## Usage
 
-- The sidebar displays all available chat sessions
-- Click on a chat session to view its messages
-- Use the expander arrows to show/hide message details
-- Edit messages using the ✏️ button
-- Delete messages using the 🗑️ button
-- Add new messages using the ➕ button
-- Export selected chats using the checkboxes and export button in the sidebar
+### Navigation
+- The sidebar on the left shows all available chat sessions
+- Each chat session displays its ID and message count
+- Click on any chat session to view its messages
+- Messages are paginated - use Previous/Next buttons at the bottom to navigate
+
+### Viewing Messages
+- Messages are displayed chronologically with role-specific icons:
+  - 👤 User messages
+  - 🤖 Assistant messages
+  - ⚙️ System messages
+  - 🔧 Tool messages
+- Each message shows its creation timestamp
+- Use the expander arrows (▼/▶) to show/hide message details
+- Messages are color-coded by role for easy identification
+
+### Message Management
+1. **Editing Messages**
+   - Click the ✏️ button to enter edit mode
+   - Make your changes in the text area
+   - Click 💾 to save or navigate away to cancel
+
+2. **Deleting Messages**
+   - Click the 🗑️ button to remove a message
+   - This action cannot be undone
+   - The message count will update automatically
+
+3. **Adding Messages**
+   - Click the ➕ button below any message to add a new message after it
+   - Use the "Add a new message at the start" expander to add at the beginning
+   - Select the role and enter content in the form
+   - Click "Submit New Message" to add or "Cancel" to discard
+
+### Exporting Data
+1. Select chat sessions for export using checkboxes in the sidebar
+2. Use "Select All" or "Clear All" buttons to quickly manage selections
+3. Click "📦 Export Selected" to generate the export
+4. Use "⬇️ Download JSON" to save the exported data
+
+### Message Format Examples
+
+1. **Assistant Messages**
+```json
+{
+  "thought": "Processing user request",
+  "response": {
+    "type": "tool_use",
+    "content": {
+      "code": "print('Hello World')"
+    }
+  }
+}
+```
+
+2. **Tool Messages**
+```
+<tool_call_response>
+[{"name": "result", "content": {"status": "success"}}]
+</tool_call_response>
+```
+
+3. **User Messages**
+```
+[device_type: 'voice'] Hello! [END]
+```
 
 ## Message Types
 
