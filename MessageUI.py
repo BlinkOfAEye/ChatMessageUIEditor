@@ -541,6 +541,21 @@ def main(chat_ids: Optional[Sequence[str]] = None):
         
         render_sidebar(chat_sessions)
         
+        # Add chat ID display here
+        if st.session_state.selected_chat_id:
+            st.markdown(f"""
+                <div style="
+                    padding: 10px;
+                    background-color: #f0f2f6;
+                    border-radius: 4px;
+                    margin-bottom: 20px;
+                    font-family: monospace;
+                    word-break: break-all;
+                ">
+                    🆔 Chat ID: {st.session_state.selected_chat_id}
+                </div>
+            """, unsafe_allow_html=True)
+        
         per_page = st.session_state.messages_per_page
         current_page = st.session_state.current_page
         
